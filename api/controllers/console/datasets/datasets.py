@@ -271,7 +271,7 @@ class DatasetIndexingEstimateApi(Resource):
                             nullable=True, location='json')
         parser.add_argument('doc_form', type=str, default='text_model', required=False, nullable=False, location='json')
         parser.add_argument('dataset_id', type=str, required=False, nullable=False, location='json')
-        parser.add_argument('doc_language', type=str, default='English', required=False, nullable=False,
+        parser.add_argument('doc_language', type=str, default='Chinese', required=False, nullable=False,
                             location='json')
         args = parser.parse_args()
         # validate args

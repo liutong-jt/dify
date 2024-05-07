@@ -111,7 +111,7 @@ const StepTwo = ({
       : IndexingType.ECONOMICAL,
   )
   const [docForm, setDocForm] = useState<DocForm | string>(
-    (datasetId && documentDetail) ? documentDetail.doc_form : DocForm.TEXT,
+    (datasetId && documentDetail) ? documentDetail.doc_form : DocForm.QA,
   )
   const [docLanguage, setDocLanguage] = useState<string>('Chinese') // Set to Chinese regardless of the system language
   const [QATipHide, setQATipHide] = useState(false)
