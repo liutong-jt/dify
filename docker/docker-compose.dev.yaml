@@ -320,7 +320,7 @@ services:
       AUTHORIZATION_ADMINLIST_USERS: 'hello@dify.ai'
     # uncomment to expose weaviate port to host
     ports:
-     - "8080:8080"
+     - "9080:8080"
 
   # The DifySandbox
   sandbox:
