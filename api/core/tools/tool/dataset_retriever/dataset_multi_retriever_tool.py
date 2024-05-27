@@ -1,3 +1,4 @@
+import logging
 import threading
 from typing import Optional
 
@@ -12,6 +13,8 @@ from core.rag.datasource.retrieval_service import RetrievalService
 from core.rerank.rerank import RerankRunner
 from extensions.ext_database import db
 from models.dataset import Dataset, Document, DocumentSegment
+
+logger = logging.getLogger(__name__)
 
 default_retrieval_model = {
     'search_method': 'semantic_search',
@@ -56,6 +59,7 @@ class DatasetMultiRetrieverTool(BaseTool):
     def _run(self, query: str) -> str:
         threads = []
         all_documents = []
+        logger.info(f"datasets: {len(self.dataset_ids)}, {self.dataset_ids}")
         for dataset_id in self.dataset_ids:
             retrieval_thread = threading.Thread(target=self._retriever, kwargs={
                 'flask_app': current_app._get_current_object(),
@@ -78,7 +82,11 @@ class DatasetMultiRetrieverTool(BaseTool):
         )
 
         rerank_runner = RerankRunner(rerank_model_instance)
-        all_documents = rerank_runner.run(query, all_documents, self.score_threshold, self.top_k)
+        logger.info(f"Rerank parameters for multi-retriever merging: {self.score_threshold}, {self.top_k}")
+        logger.info(f"All retrieved docs before reranking: {[str(ii) + '.' + all_doc.page_content[:20] for ii, all_doc in enumerate(all_documents)]}")
+        if len(all_documents) != 0:
+            all_documents = rerank_runner.run(query, all_documents, self.score_threshold, self.top_k)
+        logger.info(f"All retrieved docs after reranking: {[str(ii) + '.' + all_doc.page_content[:20] for ii, all_doc in enumerate(all_documents)]}")
 
         for hit_callback in self.hit_callbacks:
             hit_callback.on_tool_end(all_documents)
@@ -107,7 +115,7 @@ class DatasetMultiRetrieverTool(BaseTool):
                 if segment.answer:
                     document_context_list.append(f'question:{segment.content} answer:{segment.answer}')
                 else:
-                    document_context_list.append(segment.content)
+                    document_context_list.append(segment.content)   # 若没有answer，直接返回question
             if self.return_resource:
                 context_list = []
                 resource_number = 1

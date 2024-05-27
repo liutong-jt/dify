@@ -77,6 +77,21 @@ class ConversationRenameApi(Resource):
             raise NotFound("Conversation Not Exists.")
 
 
+class ConversationNameApi(Resource):
+
+    @validate_app_token(fetch_user_arg=FetchUserArg(fetch_from=WhereisUserArg.QUERY))
+    @marshal_with(simple_conversation_fields)
+    def get(self, app_model: App, end_user: EndUser, c_id):
+        app_mode = AppMode.value_of(app_model.mode)
+        if app_mode not in [AppMode.CHAT, AppMode.AGENT_CHAT, AppMode.ADVANCED_CHAT]:
+            raise NotChatAppError()
+
+        conversation_id = str(c_id)
+
+        return ConversationService.get_conversation(app_model, conversation_id, end_user)
+
+
 api.add_resource(ConversationRenameApi, '/conversations/<uuid:c_id>/name', endpoint='conversation_name')
 api.add_resource(ConversationApi, '/conversations')
 api.add_resource(ConversationDetailApi, '/conversations/<uuid:c_id>', endpoint='conversation_detail')
+api.add_resource(ConversationNameApi, '/conversations/<uuid:c_id>/get_name')

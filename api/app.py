@@ -85,7 +85,7 @@ def create_app(test_config=None) -> Flask:
 
     app.secret_key = app.config['SECRET_KEY']
 
-    logging.basicConfig(level=app.config.get('LOG_LEVEL', 'INFO'))
+    logging.basicConfig(format='%(asctime)s %(pathname)s line:%(lineno)d [%(levelname)s] %(message)s', level=app.config.get('LOG_LEVEL', 'INFO'))
 
     initialize_extensions(app)
     register_blueprints(app)

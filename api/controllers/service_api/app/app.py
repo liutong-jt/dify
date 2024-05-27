@@ -7,9 +7,21 @@ from controllers.service_api import api
 from controllers.service_api.app.error import AppUnavailableError
 from controllers.service_api.wraps import validate_app_token
 from extensions.ext_database import db
-from models.model import App, AppModelConfig, AppMode
+from models.model import App, AppModelConfig, AppMode, ApiToken
 from models.tools import ApiToolProvider
 from services.app_service import AppService
+from models.dataset import Dataset
+
+
+app_fields = {
+    'id': fields.String,
+    'name': fields.String,
+    'mode': fields.String,
+    'icon': fields.String,
+    'icon_background': fields.String,
+    'token': fields.String,
+    'datasets': fields.List(fields.List(fields.String))
+}
 
 
 class AppParameterApi(Resource):
@@ -93,5 +105,41 @@ class AppMetaApi(Resource):
         return AppService().get_app_meta(app_model)
 
 
+# TODO(chiyu): add mode selection
+class AppListApi(Resource):
+    @marshal_with(app_fields)
+    def get(self):
+        """Get app list"""
+
+        # get app list, not left join now, all returned apps should contain api_token
+        apps = (db.session.query(App.id, App.name, App.mode, App.icon, App.icon_background, ApiToken.token,
+                                AppModelConfig.dataset_configs, AppModelConfig.user_input_form).
+                filter(App.is_universal == False).join(ApiToken, App.id == ApiToken.app_id).
+                join(AppModelConfig, AppModelConfig.id == App.app_model_config_id).all())
+        res = []
+        for app in apps:
+            dataset_ids = [dataset_config['dataset']['id'] for dataset_config in json.loads(app.dataset_configs)['datasets']['datasets']]
+            datasets = []
+            for dataset_id in dataset_ids:
+                # get dataset from dataset id
+                dataset = db.session.query(Dataset).filter(
+                    Dataset.id == dataset_id
+                ).first()
+                if dataset is not None:
+                    datasets.append([dataset.id, dataset.name])
+            res.append({
+                'id': app.id,
+                'name': app.name,
+                'mode': app.mode,
+                'icon': app.icon,
+                'icon_background': app.icon_background,
+                'token': app.token,
+                'datasets': datasets
+            })
+
+        return res
+
+
 api.add_resource(AppParameterApi, '/parameters')
 api.add_resource(AppMetaApi, '/meta')
+api.add_resource(AppListApi, '/apps')

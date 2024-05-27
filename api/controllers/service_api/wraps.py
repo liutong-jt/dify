@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
@@ -15,6 +16,8 @@ from libs.login import _get_user
 from models.account import Account, Tenant, TenantAccountJoin
 from models.model import ApiToken, App, EndUser
 from services.feature_service import FeatureService
+
+logger = logging.getLogger(__name__)
 
 
 class WhereisUserArg(Enum):
@@ -35,7 +38,10 @@ def validate_app_token(view: Optional[Callable] = None, *, fetch_user_arg: Optio
     def decorator(view_func):
         @wraps(view_func)
         def decorated_view(*args, **kwargs):
+            logger.info("-" * 200)
+            logger.info(request.headers)
             api_token = validate_and_get_api_token('app')
+            logger.info(f'API token: {api_token}')
 
             app_model = db.session.query(App).filter(App.id == api_token.app_id).first()
             if not app_model:
@@ -52,10 +58,13 @@ def validate_app_token(view: Optional[Callable] = None, *, fetch_user_arg: Optio
             if fetch_user_arg:
                 if fetch_user_arg.fetch_from == WhereisUserArg.QUERY:
                     user_id = request.args.get('user')
+                    logger.info(request.args)
                 elif fetch_user_arg.fetch_from == WhereisUserArg.JSON:
                     user_id = request.get_json().get('user')
+                    logger.info(request.json)
                 elif fetch_user_arg.fetch_from == WhereisUserArg.FORM:
                     user_id = request.form.get('user')
+                    logger.info(request.form)
                 else:
                     # use default-user
                     user_id = None

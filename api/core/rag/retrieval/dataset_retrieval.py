@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, cast
 
 from langchain.tools import BaseTool
@@ -14,6 +15,8 @@ from core.tools.tool.dataset_retriever.dataset_multi_retriever_tool import Datas
 from core.tools.tool.dataset_retriever.dataset_retriever_tool import DatasetRetrieverTool
 from extensions.ext_database import db
 from models.dataset import Dataset
+
+logger = logging.getLogger(__name__)
 
 
 class DatasetRetrieval:
@@ -39,6 +42,7 @@ class DatasetRetrieval:
         """
         dataset_ids = config.dataset_ids
         retrieve_config = config.retrieve_config
+        logger.info(f"Retrieving Config: {retrieve_config}")
 
         # check model is support tool calling
         model_type_instance = model_config.provider_model_bundle.model_type_instance

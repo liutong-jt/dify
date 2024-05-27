@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from flask import request
@@ -48,6 +49,7 @@ from services.dataset_service import DatasetService, DocumentService
 from tasks.add_document_to_index_task import add_document_to_index_task
 from tasks.remove_document_from_index_task import remove_document_from_index_task
 
+logger = logging.getLogger(__name__)
 
 class DocumentResource(Resource):
     def get_document(self, dataset_id: str, document_id: str) -> Document:
@@ -123,6 +125,8 @@ class GetProcessRuleApi(Resource):
             if dataset_process_rule:
                 mode = dataset_process_rule.mode
                 rules = dataset_process_rule.rules_dict
+
+        logger.info(f"mode and rules: {mode}, {rules}")
 
         return {
             'mode': mode,

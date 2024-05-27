@@ -1,3 +1,4 @@
+import logging
 import threading
 from typing import Optional
 
@@ -8,6 +9,8 @@ from core.rag.datasource.keyword.keyword_factory import Keyword
 from core.rag.datasource.vdb.vector_factory import Vector
 from extensions.ext_database import db
 from models.dataset import Dataset
+
+logger = logging.getLogger(__name__)
 
 default_retrieval_model = {
     'search_method': 'semantic_search',
@@ -67,7 +70,7 @@ class RetrievalService:
                 'query': query,
                 'retrival_method': retrival_method,
                 'score_threshold': score_threshold,
-                'top_k': top_k,
+                'top_k': top_k,     # TODO(chiyu): should be larger, cannot be the same as reranker topk
                 'reranking_model': reranking_model,
                 'all_documents': all_documents
             })
@@ -77,14 +80,18 @@ class RetrievalService:
         for thread in threads:
             thread.join()
 
-        if retrival_method == 'hybrid_search':
-            data_post_processor = DataPostProcessor(str(dataset.tenant_id), reranking_model, False)
-            all_documents = data_post_processor.invoke(
-                query=query,
-                documents=all_documents,
-                score_threshold=score_threshold,
-                top_n=top_k
-            )
+        # TODO(chiyu): recover after fix rerank concurrent bug
+        # if retrival_method == 'hybrid_search':
+        #     data_post_processor = DataPostProcessor(str(dataset.tenant_id), reranking_model, False)
+        #     all_documents = data_post_processor.invoke(
+        #         query=query,
+        #         documents=all_documents,
+        #         score_threshold=score_threshold,
+        #         top_n=top_k
+        #     )
+        logger.info(f"Final retrieved results for dataset {dataset_id}: {len(all_documents)}")
+        # for doc in all_documents:
+        #     logger.info(doc)
         return all_documents
 
     @classmethod
@@ -139,6 +146,9 @@ class RetrievalService:
                     ))
                 else:
                     all_documents.extend(documents)
+            logger.info(f"Embedding search for dataset {dataset_id}: {len(documents)}")
+            # for idx, document in enumerate(documents):
+            #     logging.info(f"Embedding search for dataset {dataset_id}, doc {idx}: {document.metadata['score']}, {document.page_content}, {document.metadata['doc_id']}")
 
     @classmethod
     def full_text_index_search(cls, flask_app: Flask, dataset_id: str, query: str,
@@ -168,3 +178,6 @@ class RetrievalService:
                     ))
                 else:
                     all_documents.extend(documents)
+            logger.info(f"Text search for dataset {dataset_id}: {len(documents)}")
+            # for idx, document in enumerate(documents):
+            #     logger.info(f"Text search for dataset {dataset_id}, doc {idx}: {document.page_content}, {document.metadata['doc_id']}")
