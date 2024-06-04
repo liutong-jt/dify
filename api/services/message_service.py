@@ -268,3 +268,38 @@ class MessageService:
         )
 
         return questions
+
+    @classmethod
+    def update_message(cls, app_model: App, message_id: str, user: Optional[Union[Account, EndUser]],
+                       query:str=None, answer:str=None):
+        message = cls.get_message(
+            app_model=app_model,
+            user=user,
+            message_id=message_id
+        )
+
+        if query !=None and query != message.query:               # update query
+            db.session.query(Message).filter(
+                Message.id == message_id,
+                Message.app_id == app_model.id,
+                Message.from_source == ('api' if isinstance(user, EndUser) else 'console'),
+                Message.from_end_user_id == (user.id if isinstance(user, EndUser) else None),
+                Message.from_account_id == (user.id if isinstance(user, Account) else None),
+            ).update({Message.query: query})
+
+            message.query = query
+
+        elif answer != None and answer != message.answer:           # update answer
+            db.session.query(Message).filter(
+                Message.id == message_id,
+                Message.app_id == app_model.id,
+                Message.from_source == ('api' if isinstance(user, EndUser) else 'console'),
+                Message.from_end_user_id == (user.id if isinstance(user, EndUser) else None),
+                Message.from_account_id == (user.id if isinstance(user, Account) else None),
+            ).update({Message.answer: answer})
+
+            message.answer = answer
+
+        db.session.commit()
+
+        return message

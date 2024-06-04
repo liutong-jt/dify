@@ -139,6 +139,27 @@ class MessageSuggestedApi(Resource):
         return {'result': 'success', 'data': questions}
 
 
+class MessageUpdateApi(Resource):
+    @validate_app_token(fetch_user_arg=FetchUserArg(fetch_from=WhereisUserArg.JSON))
+    def post(self, app_model: App, end_user: EndUser, message_id):
+
+        message_id = str(message_id)
+
+        parser = reqparse.RequestParser()
+        parser.add_argument('query', type=str, required=True, default=None, location='json')
+        parser.add_argument('answer', type=str, required=True, default=None, location='json')
+        args = parser.parse_args()
+
+        try:
+            message = MessageService.update_message(app_model, message_id, end_user, query=args['query'], answer=args['answer'])
+        except services.errors.message.MessageNotExistsError:
+            raise NotFound("Message Not Exists.")
+        except services.errors.message.MessageUpdateError:
+            raise BadRequest("Message Update Error.")
+        return {"result": "success"}
+        
+
 api.add_resource(MessageListApi, '/messages')
 api.add_resource(MessageFeedbackApi, '/messages/<uuid:message_id>/feedbacks')
 api.add_resource(MessageSuggestedApi, '/messages/<uuid:message_id>/suggested')
+api.add_resource(MessageUpdateApi, '/messages/<uuid:message_id>/update')
