@@ -150,29 +150,33 @@ def extract_sections(text: str):
     chapter_content = re.sub(r'-\s*\d+\s*-', '', chapter_content).strip()
 
     # 匹配章节信息
-    # chapter_pattern = re.compile(r'(第\S+章 .+?)(?=第\S+章 |\Z)', re.DOTALL)
-    chapter_pattern = re.compile(r'第(\S+)章\s*(\S+)\s*([\s\S]*?)(?=第\S+章\s*\S+|\Z)', re.DOTALL)
     chapter_pattern = re.compile(r'第(\S+)章\s*(\S+?)\s*([\s\S]*?)(?=第\S+章\s*\S+?\s*|\Z)', re.DOTALL)
     chapter_matches = chapter_pattern.findall(chapter_content)
 
     if chapter_matches == [] and chapter_content != '':
-        logger.info(f"正则表达式匹配过程中出现问题: 没有章节格式内容。{chapter_content}")
-
-    sections = []
-    for match in chapter_matches:
-        chapter_num, chapter_title, section_info = match
-        end_token = section_info.find("\r\n")
-        if end_token != -1:
-            chapter_title += section_info[:end_token]
-        else:
-            end_token = section_info.find("\n")
-            if end_token != -1:
-                chapter_title += section_info[:end_token]
-        chapter_info = f"第{chapter_num}章 {chapter_title}"
-        section_matches = re.findall(r'第(\S+)条\s*(.+?)(?=第\S+条\s*|\Z)', section_info, re.DOTALL)
+        # 没有章节只有条目： 处理条目 
+        section_pattern = re.compile(r'第(\S+)条\s*(.+?)(?=第\S+条\s*|\Z)', re.DOTALL)
+        section_matches = section_pattern.findall(chapter_content)
+        sections = []
         for section_match in section_matches:
             section_num, section_content = section_match
-            section = f"第{section_num}条 {section_content.strip()}"
-            sections.append((chapter_info, section))
+            sections.append((f"第{section_num}条", section_content)) # section info, section content
+    else:
+        sections = []
+        for match in chapter_matches:
+            chapter_num, chapter_title, section_info = match
+            end_token = section_info.find("\r\n")
+            if end_token != -1:
+                chapter_title += section_info[:end_token]
+            else:
+                end_token = section_info.find("\n")
+                if end_token != -1:
+                    chapter_title += section_info[:end_token]
+            chapter_info = f"第{chapter_num}章 {chapter_title}"
+            section_matches = re.findall(r'第(\S+)条\s*(.+?)(?=第\S+条\s*|\Z)', section_info, re.DOTALL)
+            for section_match in section_matches:
+                section_num, section_content = section_match
+                section = f"第{section_num}条 {section_content.strip()}"
+                sections.append((chapter_info, section))
 
     return sections
