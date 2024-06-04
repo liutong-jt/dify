@@ -146,8 +146,8 @@ class MessageUpdateApi(Resource):
         message_id = str(message_id)
 
         parser = reqparse.RequestParser()
-        parser.add_argument('query', type=str, required=True, default=None, location='json')
-        parser.add_argument('answer', type=str, required=True, default=None, location='json')
+        parser.add_argument('query', type=str, required=False, default=None, location='json')
+        parser.add_argument('answer', type=str, required=False, default=None, location='json')
         args = parser.parse_args()
 
         try:
