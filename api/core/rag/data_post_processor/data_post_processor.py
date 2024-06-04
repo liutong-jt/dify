@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 
 from core.model_manager import ModelManager
@@ -6,6 +7,8 @@ from core.model_runtime.errors.invoke import InvokeAuthorizationError
 from core.rag.data_post_processor.reorder import ReorderRunner
 from core.rag.models.document import Document
 from core.rerank.rerank import RerankRunner
+
+logger = logging.getLogger(__name__)
 
 
 class DataPostProcessor:
@@ -18,11 +21,13 @@ class DataPostProcessor:
 
     def invoke(self, query: str, documents: list[Document], score_threshold: Optional[float] = None,
                top_n: Optional[int] = None, user: Optional[str] = None) -> list[Document]:
-        if self.rerank_runner:
+        logger.info(f"start reranking... {len(documents)}")
+        if self.rerank_runner and len(documents) > 0:
             documents = self.rerank_runner.run(query, documents, score_threshold, top_n, user)
 
         if self.reorder_runner:
             documents = self.reorder_runner.run(documents)
+        logger.info(f"end reranking... {len(documents)}")
 
         return documents
 

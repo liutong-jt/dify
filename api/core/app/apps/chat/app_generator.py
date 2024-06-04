@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import threading
@@ -62,10 +63,21 @@ class ChatAppGenerator(MessageBasedAppGenerator):
             conversation = self._get_conversation_by_user(app_model, args.get('conversation_id'), user)
 
         # get app model config
-        app_model_config = self._get_app_model_config(
+        app_model_config = self._get_app_model_config(      # 如果有conversation历史，则从conversation.app_model_config_id取。不然从app_model取
             app_model=app_model,
             conversation=conversation
         )
+
+        # TODO(chiyu): override dataset config from args, 区分single和multiple的app_model_config.dataset_configs/dataset_configs_dict
+        app_model_config_override = app_model_config.copy()
+        dataset_configs_dict = app_model_config.dataset_configs_dict
+        if args.get('dataset_ids'):
+            dataset_ids = args.get('dataset_ids')
+            datasets = []
+            for dataset_id in dataset_ids:
+                datasets.append({'dataset': {'enabled': True, 'id': dataset_id}})
+            dataset_configs_dict["datasets"]["datasets"] = datasets
+            app_model_config_override.dataset_configs = json.dumps(dataset_configs_dict)
 
         # validate override model config
         override_model_config_dict = None
@@ -82,7 +94,7 @@ class ChatAppGenerator(MessageBasedAppGenerator):
         # parse files
         files = args['files'] if 'files' in args and args['files'] else []
         message_file_parser = MessageFileParser(tenant_id=app_model.tenant_id, app_id=app_model.id)
-        file_extra_config = FileUploadConfigManager.convert(override_model_config_dict or app_model_config.to_dict())
+        file_extra_config = FileUploadConfigManager.convert(override_model_config_dict or app_model_config_override.to_dict())
         if file_extra_config:
             file_objs = message_file_parser.validate_and_transform_files_arg(
                 files,
@@ -95,7 +107,7 @@ class ChatAppGenerator(MessageBasedAppGenerator):
         # convert to app config
         app_config = ChatAppConfigManager.get_app_config(
             app_model=app_model,
-            app_model_config=app_model_config,
+            app_model_config=app_model_config_override,
             conversation=conversation,
             override_config_dict=override_model_config_dict
         )

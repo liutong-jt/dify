@@ -19,10 +19,16 @@ from core.app.apps.base_app_queue_manager import AppQueueManager
 from core.app.entities.app_invoke_entities import InvokeFrom
 from core.errors.error import ModelCurrentlyNotSupportError, ProviderTokenNotInitError, QuotaExceededError
 from core.model_runtime.errors.invoke import InvokeError
+from core.model_runtime.model_providers.openai_api_compatible.llm.llm import OAIAPICompatLargeLanguageModel
+from core.rag.extractor.entity.extract_setting import ExtractSetting
+from core.rag.extractor.extract_processor import ExtractProcessor
+from extensions.ext_database import db
 from libs import helper
 from libs.helper import uuid_value
-from models.model import App, AppMode, EndUser
+from models.model import App, AppMode, EndUser, UploadFile
 from services.app_generate_service import AppGenerateService
+
+logger = logging.getLogger(__name__)
 
 
 class CompletionApi(Resource):
@@ -151,7 +157,90 @@ class ChatStopApi(Resource):
         return {'result': 'success'}, 200
 
 
+class ChatHomologyApi(Resource):
+    @validate_app_token(fetch_user_arg=FetchUserArg(fetch_from=WhereisUserArg.JSON, required=True))
+    def post(self, app_model: App, end_user: EndUser):
+        app_mode = AppMode.value_of(app_model.mode)
+        if app_mode not in [AppMode.CHAT, AppMode.AGENT_CHAT, AppMode.ADVANCED_CHAT]:
+            raise NotChatAppError()
+
+        parser = reqparse.RequestParser()
+        parser.add_argument('inputs', type=dict, required=True, location='json')
+        parser.add_argument('query', type=str, required=True, location='json')
+        parser.add_argument('files', type=list, required=False, location='json')
+        parser.add_argument('dataset_ids', type=list, required=False, location='json')
+        parser.add_argument('response_mode', type=str, choices=['blocking', 'streaming'], location='json')
+        parser.add_argument('conversation_id', type=uuid_value, location='json')
+        parser.add_argument('retriever_from', type=str, required=False, default='dev', location='json')
+        parser.add_argument('auto_generate_name', type=bool, required=False, default=True, location='json')
+
+        args = parser.parse_args()
+
+        logger.info(f'App Model Config: {app_model.app_model_config_id}, App Model: {app_model.id}')
+
+        if 'file_id' in args.inputs.keys():
+            file = db.session.query(UploadFile).filter(
+                UploadFile.id == args.inputs['file_id']
+            ).first()
+
+            # TODO(chiyu): if file is None, should throw error
+            # TODO(chiyu): optimize: no need to parse file in chat-messages api
+            if file is not None:
+                logger.info(f"Use uploaded file {file.filename}")
+                extract_setting = ExtractSetting(
+                    datasource_type="upload_file",
+                    upload_file=file
+                )
+                text_docs = ExtractProcessor.extract(extract_setting=extract_setting)
+                # add length limit
+                file_length = 0
+                content = ''
+                for text in text_docs:
+                    content += text.page_content
+                    file_length += OAIAPICompatLargeLanguageModel()._get_num_tokens_by_gpt2(text.page_content)
+                    if file_length > 800:
+                        logger.warning("file length over 800")
+                        break
+                args.inputs['article_template'] = content
+            else:
+                logger.warning("Invalid file ID.")
+
+        streaming = args['response_mode'] == 'streaming'
+
+        try:
+            response = AppGenerateService.generate(
+                app_model=app_model,
+                user=end_user,
+                args=args,
+                invoke_from=InvokeFrom.SERVICE_API,
+                streaming=streaming
+            )
+
+            return helper.compact_generate_response(response)
+        except services.errors.conversation.ConversationNotExistsError:
+            raise NotFound("Conversation Not Exists.")
+        except services.errors.conversation.ConversationCompletedError:
+            raise ConversationCompletedError()
+        except services.errors.app_model_config.AppModelConfigBrokenError:
+            logging.exception("App model config broken.")
+            raise AppUnavailableError()
+        except ProviderTokenNotInitError as ex:
+            raise ProviderNotInitializeError(ex.description)
+        except QuotaExceededError:
+            raise ProviderQuotaExceededError()
+        except ModelCurrentlyNotSupportError:
+            raise ProviderModelCurrentlyNotSupportError()
+        except InvokeError as e:
+            raise CompletionRequestError(e.description)
+        except ValueError as e:
+            raise e
+        except Exception as e:
+            logging.exception("internal server error.")
+            raise InternalServerError()
+
+
 api.add_resource(CompletionApi, '/completion-messages')
 api.add_resource(CompletionStopApi, '/completion-messages/<string:task_id>/stop')
 api.add_resource(ChatApi, '/chat-messages')
 api.add_resource(ChatStopApi, '/chat-messages/<string:task_id>/stop')
+api.add_resource(ChatHomologyApi, '/chat-homology-messages')

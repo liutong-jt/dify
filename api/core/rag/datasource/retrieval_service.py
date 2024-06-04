@@ -6,7 +6,6 @@ from flask import Flask, current_app
 
 from core.rag.data_post_processor.data_post_processor import DataPostProcessor
 from core.rag.datasource.keyword.keyword_factory import Keyword
-from core.rag.datasource.query_transformations import QueryTransformationService
 from core.rag.datasource.vdb.vector_factory import Vector
 from extensions.ext_database import db
 from models.dataset import Dataset
@@ -29,7 +28,7 @@ class RetrievalService:
 
     @classmethod
     def retrieve(cls, retrival_method: str, dataset_id: str, query: str,
-                 top_k: int, score_threshold: Optional[float] = .0, reranking_model: Optional[dict] = None, is_hyde: bool = True):
+                 top_k: int, score_threshold: Optional[float] = .0, reranking_model: Optional[dict] = None):
         dataset = db.session.query(Dataset).filter(
             Dataset.id == dataset_id
         ).first()
@@ -38,7 +37,7 @@ class RetrievalService:
         all_documents = []
         threads = []
         # retrieval_model source with keyword
-        if retrival_method == 'keyword_search' or retrival_method == 'hybrid_search':
+        if retrival_method == 'keyword_search':
             keyword_thread = threading.Thread(target=RetrievalService.keyword_search, kwargs={
                 'flask_app': current_app._get_current_object(),
                 'dataset_id': dataset_id,
@@ -49,7 +48,6 @@ class RetrievalService:
             threads.append(keyword_thread)
             keyword_thread.start()
         # retrieval_model source with semantic
-        ### TODO: what funk? need refactor
         if retrival_method == 'semantic_search' or retrival_method == 'hybrid_search':
             embedding_thread = threading.Thread(target=RetrievalService.embedding_search, kwargs={
                 'flask_app': current_app._get_current_object(),
@@ -64,65 +62,36 @@ class RetrievalService:
             threads.append(embedding_thread)
             embedding_thread.start()
 
-        # # retrieval source with full text 暂时在 JT 业务中不需要，看后序需求调整。
-        # if retrival_method == 'full_text_search' or retrival_method == 'hybrid_search':
-        #     full_text_index_thread = threading.Thread(target=RetrievalService.full_text_index_search, kwargs={
-        #         'flask_app': current_app._get_current_object(),
-        #         'dataset_id': dataset_id,
-        #         'query': query,
-        #         'retrival_method': retrival_method,
-        #         'score_threshold': score_threshold,
-        #         'top_k': top_k,
-        #         'reranking_model': reranking_model,
-        #         'all_documents': all_documents
-        #     })
-        #     threads.append(full_text_index_thread)
-        #     full_text_index_thread.start()
-        
-        # add hyde
-        if retrival_method == 'hybrid_search' and is_hyde:
-            """using hyde only in hybrid search"""
-            query4hyde  = QueryTransformationService.hyde(query)
-            if query4hyde:
-                keyword_thread = threading.Thread(target=RetrievalService.keyword_search, kwargs={
-                    'flask_app': current_app._get_current_object(),
-                    'dataset_id': dataset_id,
-                    'query': query4hyde,
-                    'top_k': top_k,
-                    'all_documents': all_documents
-                })
-                threads.append(keyword_thread)
-                keyword_thread.start()
-                
-                embedding_thread = threading.Thread(target=RetrievalService.embedding_search, kwargs={
-                    'flask_app': current_app._get_current_object(),
-                    'dataset_id': dataset_id,
-                    'query': query4hyde,
-                    'top_k': top_k,
-                    'score_threshold': score_threshold,
-                    'reranking_model': reranking_model,
-                    'all_documents': all_documents,
-                    'retrival_method': retrival_method
-                })
-                threads.append(embedding_thread)
-                embedding_thread.start()
+        # retrieval source with full text
+        if retrival_method == 'full_text_search' or retrival_method == 'hybrid_search':
+            full_text_index_thread = threading.Thread(target=RetrievalService.full_text_index_search, kwargs={
+                'flask_app': current_app._get_current_object(),
+                'dataset_id': dataset_id,
+                'query': query,
+                'retrival_method': retrival_method,
+                'score_threshold': score_threshold,
+                'top_k': top_k,     # TODO(chiyu): should be larger, cannot be the same as reranker topk
+                'reranking_model': reranking_model,
+                'all_documents': all_documents
+            })
+            threads.append(full_text_index_thread)
+            full_text_index_thread.start()
 
         for thread in threads:
             thread.join()
 
-        if retrival_method == 'hybrid_search':
-            data_post_processor = DataPostProcessor(str(dataset.tenant_id), reranking_model, False)
-            all_documents = data_post_processor.invoke(
-                query=query,
-                documents=all_documents,
-                score_threshold=score_threshold,
-                top_n=top_k
-            )
-
-        logger.info(f"Final retrieved results for dataset {dataset_id}: ")
-        for doc in all_documents:
-            logger.info(doc)
-
+        # TODO(chiyu): recover after fix rerank concurrent bug
+        # if retrival_method == 'hybrid_search':
+        #     data_post_processor = DataPostProcessor(str(dataset.tenant_id), reranking_model, False)
+        #     all_documents = data_post_processor.invoke(
+        #         query=query,
+        #         documents=all_documents,
+        #         score_threshold=score_threshold,
+        #         top_n=top_k
+        #     )
+        logger.info(f"Final retrieved results for dataset {dataset_id}: {len(all_documents)}")
+        # for doc in all_documents:
+        #     logger.info(doc)
         return all_documents
 
     @classmethod
@@ -177,11 +146,9 @@ class RetrievalService:
                     ))
                 else:
                     all_documents.extend(documents)
-
-        logger.info(f"Embedding search for dataset {dataset_id}: {len(documents)}")
-        for idx, document in enumerate(documents):
-            logging.info(f"Embedding search for dataset {dataset_id}, doc {idx}: {document.metadata['score']}, "
-                         f"{document.page_content}, {document.metadata['doc_id']}")
+            logger.info(f"Embedding search for dataset {dataset_id}: {len(documents)}")
+            # for idx, document in enumerate(documents):
+            #     logging.info(f"Embedding search for dataset {dataset_id}, doc {idx}: {document.metadata['score']}, {document.page_content}, {document.metadata['doc_id']}")
 
     @classmethod
     def full_text_index_search(cls, flask_app: Flask, dataset_id: str, query: str,
@@ -212,5 +179,5 @@ class RetrievalService:
                 else:
                     all_documents.extend(documents)
             logger.info(f"Text search for dataset {dataset_id}: {len(documents)}")
-            for idx, document in enumerate(documents):
-                logger.info(f"Text search for dataset {dataset_id}, doc {idx}: {document.page_content}, {document.metadata['doc_id']}")
+            # for idx, document in enumerate(documents):
+            #     logger.info(f"Text search for dataset {dataset_id}, doc {idx}: {document.page_content}, {document.metadata['doc_id']}")

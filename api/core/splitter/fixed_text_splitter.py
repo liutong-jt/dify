@@ -1,6 +1,8 @@
 """Functionality for splitting text."""
 from __future__ import annotations
 
+import logging
+import re
 from typing import Any, Optional, cast
 
 from core.model_manager import ModelInstance
@@ -15,6 +17,8 @@ from core.splitter.text_splitter import (
     TokenTextSplitter,
     Union,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class EnhanceRecursiveCharacterTextSplitter(RecursiveCharacterTextSplitter):
@@ -112,3 +116,63 @@ class FixedRecursiveCharacterTextSplitter(EnhanceRecursiveCharacterTextSplitter)
             merged_text = self._merge_splits(_good_splits, separator)
             final_chunks.extend(merged_text)
         return final_chunks
+
+
+# TODO(chiyu): fix all corner cases
+class CustomRecursiveCharacterTextSplitter(FixedRecursiveCharacterTextSplitter):
+    def split_text(self, text: str) -> list[str]:
+        split_texts = extract_sections(text)
+        outputs = []
+        for chapter_info, section_text in split_texts:
+            outputs.append(f"{chapter_info}\n{section_text}")
+        return outputs
+
+
+def extract_sections(text: str):
+    '''
+        正则表达式拆分章节和附件
+        TODO(liutong): 附件处理, 当前没有添加附件到数据库中
+    '''
+    # 解析章节
+    attachment_pattern = re.compile(r'-\s*\d+\s*-\s*附件(?:\d+\s*)?\s*((?:.|\n)*?)(?=-\s*\d+\s*-|附件\d+|$)', re.DOTALL)
+    attachment_matches = attachment_pattern.finditer(text)
+
+    attachment_contents = []
+    for i, match in enumerate(attachment_matches):
+        if i == 0:
+            chapter_content = text[:match.start()].strip()
+        attachment_contents.append(text[match.start():match.end()])
+
+    if len(attachment_contents) == 0:
+        chapter_content = text
+
+    # 删掉页码信息
+    chapter_content = re.sub(r'-\s*\d+\s*-', '', chapter_content).strip()
+
+    # 匹配章节信息
+    # chapter_pattern = re.compile(r'(第\S+章 .+?)(?=第\S+章 |\Z)', re.DOTALL)
+    chapter_pattern = re.compile(r'第(\S+)章\s*(\S+)\s*([\s\S]*?)(?=第\S+章\s*\S+|\Z)', re.DOTALL)
+    chapter_pattern = re.compile(r'第(\S+)章\s*(\S+?)\s*([\s\S]*?)(?=第\S+章\s*\S+?\s*|\Z)', re.DOTALL)
+    chapter_matches = chapter_pattern.findall(chapter_content)
+
+    if chapter_matches == [] and chapter_content != '':
+        logger.info(f"正则表达式匹配过程中出现问题: 没有章节格式内容。{chapter_content}")
+
+    sections = []
+    for match in chapter_matches:
+        chapter_num, chapter_title, section_info = match
+        end_token = section_info.find("\r\n")
+        if end_token != -1:
+            chapter_title += section_info[:end_token]
+        else:
+            end_token = section_info.find("\n")
+            if end_token != -1:
+                chapter_title += section_info[:end_token]
+        chapter_info = f"第{chapter_num}章 {chapter_title}"
+        section_matches = re.findall(r'第(\S+)条\s*(.+?)(?=第\S+条\s*|\Z)', section_info, re.DOTALL)
+        for section_match in section_matches:
+            section_num, section_content = section_match
+            section = f"第{section_num}条 {section_content.strip()}"
+            sections.append((chapter_info, section))
+
+    return sections

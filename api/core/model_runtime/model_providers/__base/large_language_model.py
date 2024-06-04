@@ -53,7 +53,6 @@ class LargeLanguageModel(AIModel):
         :param callbacks: callbacks
         :return: full response or stream response chunk generator result
         """
-
         logger.info(f"LLM invoke: {prompt_messages}")
         # validate and filter model parameters
         if model_parameters is None:

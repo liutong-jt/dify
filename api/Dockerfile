@@ -11,8 +11,7 @@ RUN apt-get update \
 
 COPY requirements.txt /requirements.txt
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --prefix=/pkg -r requirements.txt
+RUN pip install --prefix=/pkg -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # production stage
 FROM base AS production
@@ -24,6 +23,7 @@ ENV CONSOLE_API_URL http://127.0.0.1:5001
 ENV CONSOLE_WEB_URL http://127.0.0.1:3000
 ENV SERVICE_API_URL http://127.0.0.1:5001
 ENV APP_WEB_URL http://127.0.0.1:3000
+#ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT 1
 
 EXPOSE 5001
 
@@ -33,9 +33,12 @@ ENV TZ UTC
 WORKDIR /app/api
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl wget vim nodejs ffmpeg libgmp-dev libmpfr-dev libmpc-dev libreoffice \
+    && apt-get install -y --no-install-recommends curl wget vim nodejs ffmpeg libgmp-dev libmpfr-dev libmpc-dev \
     && apt-get autoremove \
     && rm -rf /var/lib/apt/lists/*
+
+RUN #wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl1.0/libssl1.0.0_1.0.2n-1ubuntu5_amd64.deb
+RUN #dpkg -i libssl1.0.0_1.0.2n-1ubuntu5_amd64.deb
 
 COPY --from=packages /pkg /usr/local
 COPY . /app/api/

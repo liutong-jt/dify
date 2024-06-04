@@ -24,7 +24,10 @@ from core.rag.extractor.entity.extract_setting import ExtractSetting
 from core.rag.index_processor.index_processor_base import BaseIndexProcessor
 from core.rag.index_processor.index_processor_factory import IndexProcessorFactory
 from core.rag.models.document import Document
-from core.splitter.fixed_text_splitter import EnhanceRecursiveCharacterTextSplitter, FixedRecursiveCharacterTextSplitter
+from core.splitter.fixed_text_splitter import (
+    CustomRecursiveCharacterTextSplitter,
+    FixedRecursiveCharacterTextSplitter,
+)
 from core.splitter.text_splitter import TextSplitter
 from extensions.ext_database import db
 from extensions.ext_redis import redis_client
@@ -35,6 +38,7 @@ from models.dataset import Document as DatasetDocument
 from models.model import UploadFile
 from services.feature_service import FeatureService
 
+logger = logging.getLogger(__name__)
 
 class IndexingRunner:
 
@@ -62,10 +66,15 @@ class IndexingRunner:
                 index_processor = IndexProcessorFactory(index_type).init_index_processor()
                 # extract
                 text_docs = self._extract(index_processor, dataset_document, processing_rule.to_dict())
+                # TODO(chiyu): make this more scalable for all enterprise
+                if processing_rule.mode == "automatic" and len(text_docs) > 0:
+                    text_docs = [Document(page_content="\r\n".join([doc.page_content for doc in text_docs]), metadata=text_docs[0].metadata)]
+                logger.info(f"text docs: {text_docs}")
 
                 # transform
                 documents = self._transform(index_processor, dataset, text_docs, dataset_document.doc_language,
                                             processing_rule.to_dict())
+                logger.info(f"documents: {documents}")
                 # save segment
                 self._load_segments(dataset, dataset_document, documents)
 
@@ -262,6 +271,9 @@ class IndexingRunner:
         for extract_setting in extract_settings:
             # extract
             text_docs = index_processor.extract(extract_setting, process_rule_mode=tmp_processing_rule["mode"])
+            # TODO(chiyu): make this more scalable for all enterprise
+            if tmp_processing_rule["mode"] == "automatic" and len(text_docs) > 0:
+                text_docs = [Document(page_content="\n\n".join([doc.page_content for doc in text_docs]), metadata=text_docs[0].metadata)]
             all_text_docs.extend(text_docs)
             processing_rule = DatasetProcessRule(
                 mode=tmp_processing_rule["mode"],
@@ -433,7 +445,7 @@ class IndexingRunner:
             )
         else:
             # Automatic segmentation
-            character_splitter = EnhanceRecursiveCharacterTextSplitter.from_encoder(
+            character_splitter = CustomRecursiveCharacterTextSplitter.from_encoder(
                 chunk_size=DatasetProcessRule.AUTOMATIC_RULES['segmentation']['max_tokens'],
                 chunk_overlap=DatasetProcessRule.AUTOMATIC_RULES['segmentation']['chunk_overlap'],
                 separators=["。\r\n", "。\n", "\n\n", "。", ".", ""], # on windows: \r\n, on linux or macos: \n

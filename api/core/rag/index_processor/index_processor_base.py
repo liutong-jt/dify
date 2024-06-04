@@ -5,7 +5,10 @@ from typing import Optional
 from core.model_manager import ModelInstance
 from core.rag.extractor.entity.extract_setting import ExtractSetting
 from core.rag.models.document import Document
-from core.splitter.fixed_text_splitter import EnhanceRecursiveCharacterTextSplitter, FixedRecursiveCharacterTextSplitter
+from core.splitter.fixed_text_splitter import (
+    CustomRecursiveCharacterTextSplitter,
+    FixedRecursiveCharacterTextSplitter,
+)
 from core.splitter.text_splitter import TextSplitter
 from models.dataset import Dataset, DatasetProcessRule
 
@@ -59,7 +62,7 @@ class BaseIndexProcessor(ABC):
             )
         else:
             # Automatic segmentation
-            character_splitter = EnhanceRecursiveCharacterTextSplitter.from_encoder(
+            character_splitter = CustomRecursiveCharacterTextSplitter.from_encoder(
                 chunk_size=DatasetProcessRule.AUTOMATIC_RULES['segmentation']['max_tokens'],
                 chunk_overlap=DatasetProcessRule.AUTOMATIC_RULES['segmentation']['chunk_overlap'],
                 separators=["\n\n", "。", ".", " ", ""],

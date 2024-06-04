@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from flask import request
 from flask_login import current_user
@@ -102,7 +102,6 @@ class GetProcessRuleApi(Resource):
         # get default rules
         mode = DocumentService.DEFAULT_RULES['mode']
         rules = DocumentService.DEFAULT_RULES['rules']
-        logger.info("mode and rules: {mode}, {rules}")
         if document_id:
             # get the latest process rule
             document = Document.query.get_or_404(document_id)
@@ -126,6 +125,8 @@ class GetProcessRuleApi(Resource):
             if dataset_process_rule:
                 mode = dataset_process_rule.mode
                 rules = dataset_process_rule.rules_dict
+
+        logger.info(f"mode and rules: {mode}, {rules}")
 
         return {
             'mode': mode,
@@ -236,7 +237,7 @@ class DatasetDocumentListApi(Resource):
                             location='json')
         parser.add_argument('data_source', type=dict, required=False, location='json')
         parser.add_argument('process_rule', type=dict, required=False, location='json')
-        parser.add_argument('duplicate', type=bool, default=True, nullable=False, location='json')
+        parser.add_argument('duplicate', type=bool, nullable=False, location='json')
         parser.add_argument('original_document_id', type=str, required=False, location='json')
         parser.add_argument('doc_form', type=str, default='text_model', required=False, nullable=False, location='json')
         parser.add_argument('doc_language', type=str, default='English', required=False, nullable=False,
@@ -377,7 +378,7 @@ class DocumentIndexingEstimateApi(DocumentResource):
                 try:
                     response = indexing_runner.indexing_estimate(current_user.current_tenant_id, [extract_setting],
                                                                  data_process_rule_dict, document.doc_form,
-                                                                 'Chinese', dataset_id)
+                                                                 'English', dataset_id)
                 except LLMBadRequestError:
                     raise ProviderNotInitializeError(
                         "No Embedding Model available. Please configure a valid provider "
@@ -396,6 +397,9 @@ class DocumentBatchIndexingEstimateApi(DocumentResource):
     def get(self, dataset_id, batch):
         dataset_id = str(dataset_id)
         batch = str(batch)
+        dataset = DatasetService.get_dataset(dataset_id)
+        if dataset is None:
+            raise NotFound("Dataset not found.")
         documents = self.get_batch_documents(dataset_id, batch)
         response = {
             "tokens": 0,
@@ -468,7 +472,7 @@ class DocumentBatchIndexingEstimateApi(DocumentResource):
             try:
                 response = indexing_runner.indexing_estimate(current_user.current_tenant_id, extract_settings,
                                                              data_process_rule_dict, document.doc_form,
-                                                             'Chinese', dataset_id)
+                                                             'English', dataset_id)
             except LLMBadRequestError:
                 raise ProviderNotInitializeError(
                     "No Embedding Model available. Please configure a valid provider "
@@ -637,7 +641,7 @@ class DocumentProcessingApi(DocumentResource):
                 raise InvalidActionError('Document not in indexing state.')
 
             document.paused_by = current_user.id
-            document.paused_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            document.paused_at = datetime.utcnow()
             document.is_paused = True
             db.session.commit()
 
@@ -717,7 +721,7 @@ class DocumentMetadataApi(DocumentResource):
                     document.doc_metadata[key] = value
 
         document.doc_type = doc_type
-        document.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        document.updated_at = datetime.utcnow()
         db.session.commit()
 
         return {'result': 'success', 'message': 'Document metadata updated.'}, 200
@@ -755,7 +759,7 @@ class DocumentStatusApi(DocumentResource):
             document.enabled = True
             document.disabled_at = None
             document.disabled_by = None
-            document.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            document.updated_at = datetime.utcnow()
             db.session.commit()
 
             # Set cache to prevent indexing the same document multiple times
@@ -772,9 +776,9 @@ class DocumentStatusApi(DocumentResource):
                 raise InvalidActionError('Document already disabled.')
 
             document.enabled = False
-            document.disabled_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            document.disabled_at = datetime.utcnow()
             document.disabled_by = current_user.id
-            document.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            document.updated_at = datetime.utcnow()
             db.session.commit()
 
             # Set cache to prevent indexing the same document multiple times
@@ -789,9 +793,9 @@ class DocumentStatusApi(DocumentResource):
                 raise InvalidActionError('Document already archived.')
 
             document.archived = True
-            document.archived_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            document.archived_at = datetime.utcnow()
             document.archived_by = current_user.id
-            document.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            document.updated_at = datetime.utcnow()
             db.session.commit()
 
             if document.enabled:
@@ -808,7 +812,7 @@ class DocumentStatusApi(DocumentResource):
             document.archived = False
             document.archived_at = None
             document.archived_by = None
-            document.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            document.updated_at = datetime.utcnow()
             db.session.commit()
 
             # Set cache to prevent indexing the same document multiple times
@@ -883,49 +887,6 @@ class DocumentRecoverApi(DocumentResource):
         return {'result': 'success'}, 204
 
 
-class DocumentRetryApi(DocumentResource):
-    @setup_required
-    @login_required
-    @account_initialization_required
-    def post(self, dataset_id):
-        """retry document."""
-
-        parser = reqparse.RequestParser()
-        parser.add_argument('document_ids', type=list, required=True, nullable=False,
-                            location='json')
-        args = parser.parse_args()
-        dataset_id = str(dataset_id)
-        dataset = DatasetService.get_dataset(dataset_id)
-        retry_documents = []
-        if not dataset:
-            raise NotFound('Dataset not found.')
-        for document_id in args['document_ids']:
-            try:
-                document_id = str(document_id)
-
-                document = DocumentService.get_document(dataset.id, document_id)
-
-                # 404 if document not found
-                if document is None:
-                    raise NotFound("Document Not Exists.")
-
-                # 403 if document is archived
-                if DocumentService.check_archived(document):
-                    raise ArchivedDocumentImmutableError()
-
-                # 400 if document is completed
-                if document.indexing_status == 'completed':
-                    raise DocumentAlreadyFinishedError()
-                retry_documents.append(document)
-            except Exception as e:
-                logging.error(f"Document {document_id} retry failed: {str(e)}")
-                continue
-        # retry document
-        DocumentService.retry_document(dataset_id, retry_documents)
-
-        return {'result': 'success'}, 204
-
-
 api.add_resource(GetProcessRuleApi, '/datasets/process-rule')
 api.add_resource(DatasetDocumentListApi,
                  '/datasets/<uuid:dataset_id>/documents')
@@ -951,4 +912,3 @@ api.add_resource(DocumentStatusApi,
                  '/datasets/<uuid:dataset_id>/documents/<uuid:document_id>/status/<string:action>')
 api.add_resource(DocumentPauseApi, '/datasets/<uuid:dataset_id>/documents/<uuid:document_id>/processing/pause')
 api.add_resource(DocumentRecoverApi, '/datasets/<uuid:dataset_id>/documents/<uuid:document_id>/processing/resume')
-api.add_resource(DocumentRetryApi, '/datasets/<uuid:dataset_id>/retry')

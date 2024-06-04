@@ -1,7 +1,9 @@
 import logging
 import threading
+from typing import Optional
 
 from flask import Flask, current_app
+from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from core.callback_handler.index_tool_callback_handler import DatasetIndexToolCallbackHandler
@@ -9,7 +11,6 @@ from core.model_manager import ModelManager
 from core.model_runtime.entities.model_entities import ModelType
 from core.rag.datasource.retrieval_service import RetrievalService
 from core.rerank.rerank import RerankRunner
-from core.tools.tool.dataset_retriever.dataset_retriever_base_tool import DatasetRetrieverBaseTool
 from extensions.ext_database import db
 from models.dataset import Dataset, Document, DocumentSegment
 
@@ -31,20 +32,25 @@ class DatasetMultiRetrieverToolInput(BaseModel):
     query: str = Field(..., description="dataset multi retriever and rerank")
 
 
-class DatasetMultiRetrieverTool(DatasetRetrieverBaseTool):
+class DatasetMultiRetrieverTool(BaseTool):
     """Tool for querying multi dataset."""
-    name: str = "dataset_"
+    name: str = "dataset-"
     args_schema: type[BaseModel] = DatasetMultiRetrieverToolInput
     description: str = "dataset multi retriever and rerank. "
+    tenant_id: str
     dataset_ids: list[str]
+    top_k: int = 2
+    score_threshold: Optional[float] = None
     reranking_provider_name: str
     reranking_model_name: str
-
+    return_resource: bool
+    retriever_from: str
+    hit_callbacks: list[DatasetIndexToolCallbackHandler] = []
 
     @classmethod
     def from_dataset(cls, dataset_ids: list[str], tenant_id: str, **kwargs):
         return cls(
-            name=f"dataset_{tenant_id.replace('-', '_')}",
+            name=f'dataset-{tenant_id}',
             tenant_id=tenant_id,
             dataset_ids=dataset_ids,
             **kwargs
@@ -77,9 +83,10 @@ class DatasetMultiRetrieverTool(DatasetRetrieverBaseTool):
 
         rerank_runner = RerankRunner(rerank_model_instance)
         logger.info(f"Rerank parameters for multi-retriever merging: {self.score_threshold}, {self.top_k}")
-        logger.info(f"All retrieved docs before reranking: {all_documents}\n")
-        all_documents = rerank_runner.run(query, all_documents, self.score_threshold, self.top_k)
-        logger.info(f"All retrieved docs after reranking: {all_documents}\n")
+        logger.info(f"All retrieved docs before reranking: {[str(ii) + '.' + all_doc.page_content[:20] for ii, all_doc in enumerate(all_documents)]}")
+        if len(all_documents) != 0:
+            all_documents = rerank_runner.run(query, all_documents, self.score_threshold, self.top_k)
+        logger.info(f"All retrieved docs after reranking: {[str(ii) + '.' + all_doc.page_content[:20] for ii, all_doc in enumerate(all_documents)]}")
 
         for hit_callback in self.hit_callbacks:
             hit_callback.on_tool_end(all_documents)
@@ -108,7 +115,7 @@ class DatasetMultiRetrieverTool(DatasetRetrieverBaseTool):
                 if segment.answer:
                     document_context_list.append(f'question:{segment.content} answer:{segment.answer}')
                 else:
-                    document_context_list.append(segment.content)
+                    document_context_list.append(segment.content)   # 若没有answer，直接返回question
             if self.return_resource:
                 context_list = []
                 resource_number = 1
@@ -149,6 +156,9 @@ class DatasetMultiRetrieverTool(DatasetRetrieverBaseTool):
                     hit_callback.return_retriever_resource_info(context_list)
 
             return str("\n".join(document_context_list))
+
+    async def _arun(self, tool_input: str) -> str:
+        raise NotImplementedError()
 
     def _retriever(self, flask_app: Flask, dataset_id: str, query: str, all_documents: list,
                    hit_callbacks: list[DatasetIndexToolCallbackHandler]):

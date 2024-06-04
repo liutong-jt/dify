@@ -26,13 +26,13 @@ class OAICompatRerankModel(RerankModel):
     def _invoke(self, model: str, credentials: dict,
                 query: str, docs: list[str], score_threshold: Optional[float] = None, top_n: Optional[int] = None,
                 user: Optional[str] = None) -> RerankResult:
-        # ### method1: use API 
+        # ### method1: use API
         endpoint_url = credentials.get('endpoint_url')
         if not endpoint_url.endswith('/'):
             endpoint_url += '/'
 
         endpoint_url = urljoin(endpoint_url, 'rerank')
-        
+
         headers = {
             'Content-Type': 'application/json'
         }
@@ -40,14 +40,14 @@ class OAICompatRerankModel(RerankModel):
         api_key = credentials.get('api_key')
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
-        
-        
+
+
         payload = {
             'query': query,
             'docs': docs,
             'model': 'maidalun1020/bce-reranker-base_v1',
         }
-        
+
         response = requests.post(
             endpoint_url,
             headers=headers,
@@ -57,14 +57,15 @@ class OAICompatRerankModel(RerankModel):
 
         response.raise_for_status()  # Raise an exception for HTTP errors
         rerank_results = response.json()
-        
+
         # ### method 2: use BCEmbedding directly
         # # init reranker model
         # rerank_model = RerankerModel(model_name_or_path=model)
         # rerank_results = rerank_model.rerank(query, docs)
 
-    
+
         rerank_documents = []
+        count = 0
         for id, idx in enumerate(rerank_results['rerank_ids']):
             # format document
             rerank_document = RerankDocument(
@@ -76,19 +77,22 @@ class OAICompatRerankModel(RerankModel):
             # score threshold check
             if score_threshold is not None:
                 if rerank_results['rerank_scores'][id] >= score_threshold:
-                    rerank_documents.append(rerank_document)
+                    if count < top_n:
+                        rerank_documents.append(rerank_document)
+                        count += 1
             else:
-                rerank_documents.append(rerank_document)    
-        
+                if count < top_n:
+                    rerank_documents.append(rerank_document)
+                    count += 1
+
         return RerankResult(
             model=model,
             docs=rerank_documents
         )
-        
+
     def validate_credentials(self, model: str, credentials: dict) -> None:
         """
         Validate model credentials
-
         :param model: model name
         :param credentials: model credentials
         :return:
@@ -121,7 +125,7 @@ class OAICompatRerankModel(RerankModel):
             InvokeAuthorizationError: [requests.HTTPError],
             InvokeBadRequestError: [requests.RequestException]
         }
-        
+
     def get_customizable_model_schema(self, model: str, credentials: dict) -> Optional[AIModelEntity]:
         entity = AIModelEntity(
             model=model,
