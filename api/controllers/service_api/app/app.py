@@ -1,7 +1,7 @@
 import json
 
 from flask import current_app
-from flask_restful import fields, marshal_with, Resource
+from flask_restful import fields, marshal_with, Resource, reqparse
 
 from controllers.service_api import api
 from controllers.service_api.app.error import AppUnavailableError
@@ -106,27 +106,62 @@ class AppMetaApi(Resource):
 
 
 # TODO(chiyu): add mode selection
+# DONE(chiyu): added mode selection, please review
 class AppListApi(Resource):
     @marshal_with(app_fields)
     def get(self):
         """Get app list"""
+        parser = reqparse.RequestParser()
+        parser.add_argument('mode', type=str, choices=['chat', 'workflow', 'agent-chat', 'channel', 'all', 'advance-chat'], default='all', location='args', required=False)
+        args = parser.parse_args()
 
         # get app list, not left join now, all returned apps should contain api_token
-        apps = (db.session.query(App.id, App.name, App.mode, App.icon, App.icon_background, ApiToken.token,
-                                AppModelConfig.dataset_configs, AppModelConfig.user_input_form).
-                filter(App.is_universal == False).join(ApiToken, App.id == ApiToken.app_id).
-                join(AppModelConfig, AppModelConfig.id == App.app_model_config_id).all())
+        query = db.session.query(
+            App.id,
+            App.name,
+            App.mode,
+            App.icon,
+            App.icon_background,
+            ApiToken.token
+        )
+
+        filters = [
+            App.is_universal == False,
+            ApiToken.app_id == App.id
+        ]
+
+        if args['mode'] == 'all':
+            pass
+        elif args['mode'] == 'workflow':
+            filters.append(App.mode.in_([AppMode.WORKFLOW.value, AppMode.COMPLETION.value]))
+        elif args['mode'] == 'chat':
+            filters.append(App.mode.in_([AppMode.CHAT.value]))
+        elif args['mode'] == 'agent-chat':
+            filters.append(App.mode == AppMode.AGENT_CHAT.value)
+        elif args['mode'] == 'channel':
+            filters.append(App.mode == AppMode.CHANNEL.value)
+        elif args['mode'] == 'advanced-chat':
+            filters.append(App.mode == AppMode.ADVANCED_CHAT.value)
+
+        # filter
+        apps = query.filter(*filters).all()
+
         res = []
         for app in apps:
-            dataset_ids = [dataset_config['dataset']['id'] for dataset_config in json.loads(app.dataset_configs)['datasets']['datasets']]
             datasets = []
-            for dataset_id in dataset_ids:
-                # get dataset from dataset id
-                dataset = db.session.query(Dataset).filter(
-                    Dataset.id == dataset_id
-                ).first()
-                if dataset is not None:
-                    datasets.append([dataset.id, dataset.name])
+            if app.mode == AppMode.CHAT.value:
+                dataset = db.session.query(AppModelConfig.dataset_configs
+                                                 ).filter(app.id == AppModelConfig.app_id
+                                                          ).order_by(AppModelConfig.updated_at.desc()).first()
+                dataset_ids = [dataset_config['dataset']['id'] for dataset_config in json.loads(dataset.dataset_configs)['datasets']['datasets']]
+                for dataset_id in dataset_ids:
+                    # get dataset from dataset id
+                    dataset = db.session.query(Dataset).filter(
+                        Dataset.id == dataset_id
+                    ).first()
+                    if dataset is not None:
+                        datasets.append([dataset.id, dataset.name])
+            
             res.append({
                 'id': app.id,
                 'name': app.name,
