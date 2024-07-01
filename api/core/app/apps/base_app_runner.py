@@ -81,10 +81,8 @@ class AppRunner:
 
         rest_tokens = model_context_tokens - max_tokens - prompt_tokens
         if rest_tokens < 0:
-            exceeded_character_count = int(abs(rest_tokens / prompt_tokens) *  len(query))    # 大约 超过了那么多个字符
             raise InvokeBadRequestError("Query or prefix prompt is too long, you can reduce the prefix prompt, "
-                                        "or shrink the max token, or switch to a llm with a larger token limit size."
-                                        f"Exceeded {exceeded_character_count} charaters.")
+                                        "or shrink the max token, or switch to a llm with a larger token limit size.")
 
         return rest_tokens
 
