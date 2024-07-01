@@ -3,7 +3,7 @@ import base64
 from typing import Optional
 import logging
 
-import fitz
+import cv2
 import numpy as np
 from paddleocr import PaddleOCR
 
@@ -15,8 +15,10 @@ from extensions.ext_storage import storage
 logging.basicConfig(format='%(asctime)s %(pathname)s line:%(lineno)d [%(levelname)s] %(message)s', level='INFO')
 
 
-class OCRPdfExtractor(BaseExtractor):
-    """Load pdf files.
+class UnstructuredImageExtractor(BaseExtractor):
+    """Load text files.
+
+
     Args:
         file_path: Path to the file to load.
     """
@@ -31,6 +33,7 @@ class OCRPdfExtractor(BaseExtractor):
         self._file_cache_key = file_cache_key
 
     def extract(self) -> list[Document]:
+        """Load from file path."""
         plaintext_file_key = ''
         plaintext_file_exists = False
         if self._file_cache_key:
@@ -40,38 +43,23 @@ class OCRPdfExtractor(BaseExtractor):
                 return [Document(page_content=text)]
             except FileNotFoundError:
                 pass
-        text_list = []
-        documents = []
-
-        doc = fitz.open(self._file_path)
-        for i in range(doc.page_count):
-            page = doc.load_page(i)
-            pix = page.get_pixmap() # 将 PDF 页面转换成一个图像
-            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape((pix.h, pix.w, pix.n))
-
-            img_data = {
-                "img64": base64.b64encode(img).decode("utf-8"), 
-                "height": pix.h, 
-                "width": pix.w,
-                "channels": pix.n,
-            }
-            result = self._ocr(img_data)
-            result = [line for line in result if line]
-
-            ocr_result = [i[1][0] for line in result for i in line]
-            page_result = "\n".join(ocr_result)
-            text_list.append(page_result)
-
-            metadata = {"source": self._file_path, "page": i}
-            documents.append(Document(page_content=page_result, metadata=metadata))
-
-        text = '\n\n'.join(text_list)
-
+            
+        img_np = cv2.imread(self._file_path)
+        h,w,c = img_np.shape
+        img_data = {"img64": base64.b64encode(img_np).decode("utf-8"), "height": h, "width": w, "channels": c}
+        result = self._ocr(img_data)
+        result = [line for line in result if line]
+        ocr_result = [i[1][0] for line in result for i in line]
+        text = "\n".join(ocr_result)
+        
+        
+        metadata = {"source": self._file_path}
+        text = text.encode('utf-8')
         # save plaintext file for caching
         if not plaintext_file_exists and plaintext_file_key:
             storage.save(plaintext_file_key, text.encode('utf-8'))
-
-        return documents
+            
+        return [Document(page_content=text, metadata=metadata)]
 
 
     def _ocr(self, img_data):
@@ -88,6 +76,5 @@ class OCRPdfExtractor(BaseExtractor):
         if not img_file:
             return 'error: No file was uploaded.'
 
-        res = ocr_engine.ocr(img_array)
-
-        return res
+        result = ocr_engine.ocr(img_array)
+        return result

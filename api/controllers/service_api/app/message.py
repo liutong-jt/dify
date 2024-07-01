@@ -1,5 +1,6 @@
 import logging
 
+from flask import make_response
 from flask_restful import Resource, fields, marshal_with, reqparse
 from flask_restful.inputs import int_range
 from werkzeug.exceptions import BadRequest, InternalServerError, NotFound
@@ -138,27 +139,33 @@ class MessageSuggestedApi(Resource):
 
         return {'result': 'success', 'data': questions}
 
-class MessageUpdateApi(Resource):
-    @validate_app_token(fetch_user_arg=FetchUserArg(fetch_from=WhereisUserArg.JSON))
-    def post(self, app_model: App, end_user: EndUser, message_id):
 
+class MessageReferenceApi(Resource):
+    @validate_app_token(fetch_user_arg=FetchUserArg(fetch_from=WhereisUserArg.QUERY))
+    def get(self, app_model: App, end_user: EndUser, message_id):
         message_id = str(message_id)
-
-        parser = reqparse.RequestParser()
-        parser.add_argument('query', type=str, required=True, default=None, location='json')
-        parser.add_argument('answer', type=str, required=True, default=None, location='json')
-        args = parser.parse_args()
+        app_mode = AppMode.value_of(app_model.mode)
+        if app_mode not in [AppMode.CHAT, AppMode.AGENT_CHAT, AppMode.ADVANCED_CHAT]:
+            raise NotChatAppError()
 
         try:
-            message = MessageService.update_message(app_model, message_id, end_user, query=args['query'], answer=args['answer'])
-        except services.errors.message.MessageNotExistsError:
-            raise NotFound("Message Not Exists.")
-        except services.errors.message.MessageUpdateError:
-            raise BadRequest("Message Update Error.")
-        return {"result": "success"}
-        
+            ref_data = MessageService.get_reference(
+                app_model=app_model,
+                user=end_user,
+                message_id=message_id
+            )
+        except Exception:
+            logging.exception("internal server error.")
+            raise InternalServerError()
+
+        response = make_response(ref_data)
+        response.mimetype = 'application/octet-stream'
+        return response
+
+        # return {'result': 'success', 'data': ref_data}
+
 
 api.add_resource(MessageListApi, '/messages')
 api.add_resource(MessageFeedbackApi, '/messages/<uuid:message_id>/feedbacks')
 api.add_resource(MessageSuggestedApi, '/messages/<uuid:message_id>/suggested')
-api.add_resource(MessageUpdateApi, '/messages/<uuid:message_id>/update')
+api.add_resource(MessageReferenceApi, '/messages/<uuid:message_id>/reference')

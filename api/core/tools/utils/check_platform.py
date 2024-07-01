@@ -9,15 +9,13 @@ class PlatformUtil:
     platform_name = platform.platform()
 
     @staticmethod
-    def isMac() -> bool:
+    def is_mac() -> bool:
         return re.search(r"macOS", PlatformUtil.platform_name, re.IGNORECASE) is not None
 
-
     @staticmethod
-    def isLinux() -> bool:
+    def is_linux() -> bool:
         return re.search(r"linux", PlatformUtil.platform_name, re.IGNORECASE) is not None
-            
-            
+    
     @staticmethod
     def is_gpu() -> bool:
         try:
@@ -25,8 +23,8 @@ class PlatformUtil:
             return True if result else False
         except FileNotFoundError:
             return False
-    
-    
+
+
     @staticmethod
     def is_text_based_pdf(pdf_path: str) -> bool:
         try:

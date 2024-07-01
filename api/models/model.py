@@ -421,6 +421,10 @@ class AppModelConfig(db.Model):
 
         return new_app_model_config
 
+    # @dataset_configs_dict.setter
+    # def set_dataset_configs_dict(self, value):
+    #     self._dataset_configs_dict = value
+
 
 class RecommendedApp(db.Model):
     __tablename__ = 'recommended_apps'

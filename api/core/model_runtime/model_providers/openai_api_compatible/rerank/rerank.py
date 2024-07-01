@@ -26,6 +26,11 @@ class OAICompatRerankModel(RerankModel):
     def _invoke(self, model: str, credentials: dict,
                 query: str, docs: list[str], score_threshold: Optional[float] = None, top_n: Optional[int] = None,
                 user: Optional[str] = None) -> RerankResult:
+        if len(docs) == 0:
+            return RerankResult(
+                model=model,
+                docs=docs
+            )
         # ### method1: use API
         endpoint_url = credentials.get('endpoint_url')
         if not endpoint_url.endswith('/'):

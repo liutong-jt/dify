@@ -184,7 +184,12 @@ class ChatAppRunner(AppRunner):
             memory=memory
         )
         # update system prompt message
-        prompt_messages[0].content = f"现在是{datetime.now()}，" + prompt_messages[0].content
+        prompt_messages[0].content = (f"现在是{datetime.now()}，" + prompt_messages[0].content)
+        if "user_article" in application_generate_entity.extras.keys():
+            user_article = application_generate_entity.extras["user_article"]
+            prompt_messages[0].content = (f"现在是{datetime.now()}，" + prompt_messages[0].content +
+                                          f"请你根据用户上传的文件回答问题，用户上传的文件内容在<user_article></user_article> XML tags里面. "
+                                          f"\n\n<user_article>\n{user_article}\n</user_article>\n")
         logger.info(f"Prompt messages for llm: {prompt_messages}")
 
         # check hosting moderation

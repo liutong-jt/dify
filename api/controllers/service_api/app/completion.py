@@ -179,31 +179,35 @@ class ChatHomologyApi(Resource):
         logger.info(f'App Model Config: {app_model.app_model_config_id}, App Model: {app_model.id}')
 
         if 'file_id' in args.inputs.keys():
-            file = db.session.query(UploadFile).filter(
-                UploadFile.id == args.inputs['file_id']
-            ).first()
+            content = ''
+            total_length = 20000
+            for i, file_id in enumerate(args.inputs['file_id']):
+                content += f"用户上传的文档{i}: "
+                file = db.session.query(UploadFile).filter(
+                    UploadFile.id == file_id
+                ).first()
 
-            # TODO(chiyu): if file is None, should throw error
-            # TODO(chiyu): optimize: no need to parse file in chat-messages api
-            if file is not None:
-                logger.info(f"Use uploaded file {file.filename}")
-                extract_setting = ExtractSetting(
-                    datasource_type="upload_file",
-                    upload_file=file
-                )
-                text_docs = ExtractProcessor.extract(extract_setting=extract_setting)
-                # add length limit
-                file_length = 0
-                content = ''
-                for text in text_docs:
-                    content += text.page_content
-                    file_length += OAIAPICompatLargeLanguageModel()._get_num_tokens_by_gpt2(text.page_content)
-                    if file_length > 800:
-                        logger.warning("file length over 800")
-                        break
-                args.inputs['article_template'] = content
-            else:
-                logger.warning("Invalid file ID.")
+                # TODO(chiyu): if file is None, should throw error
+                # TODO(chiyu): optimize: no need to parse file in chat-messages api
+                if file is not None:
+                    logger.info(f"Use uploaded file {file.name}")
+                    extract_setting = ExtractSetting(
+                        datasource_type="upload_file",
+                        upload_file=file
+                    )
+                    text_docs = ExtractProcessor.extract(extract_setting=extract_setting)
+                    # add length limit
+                    file_length = 0
+                    for text in text_docs:
+                        content += text.page_content + "\n\n"
+                        file_length += OAIAPICompatLargeLanguageModel()._get_num_tokens_by_gpt2(text.page_content)
+                        if file_length > total_length//len(args.inputs['file_id']):
+                            logger.warning(f"file length over average limit {total_length//len(args.inputs['file_id'])}")
+                            break
+                else:
+                    logger.warning("Invalid file ID.")
+            if content != "":
+                args.inputs['article_template'] = content[:total_length]
 
         streaming = args['response_mode'] == 'streaming'
 

@@ -8,9 +8,20 @@ from core.memory.token_buffer_memory import TokenBufferMemory
 from core.model_manager import ModelManager
 from core.model_runtime.entities.model_entities import ModelType
 from extensions.ext_database import db
+from extensions.ext_storage import storage
 from libs.infinite_scroll_pagination import InfiniteScrollPagination
 from models.account import Account
-from models.model import App, AppMode, AppModelConfig, EndUser, Message, MessageFeedback
+from models.dataset import Document
+from models.model import (
+    App,
+    AppMode,
+    AppModelConfig,
+    DatasetRetrieverResource,
+    EndUser,
+    Message,
+    MessageFeedback,
+    UploadFile,
+)
 from services.conversation_service import ConversationService
 from services.errors.conversation import ConversationCompletedError, ConversationNotExistsError
 from services.errors.message import (
@@ -270,36 +281,30 @@ class MessageService:
         return questions
 
     @classmethod
-    def update_message(cls, app_model: App, message_id: str, user: Optional[Union[Account, EndUser]],
-                       query:str=None, answer:str=None):
-        message = cls.get_message(
-            app_model=app_model,
-            user=user,
-            message_id=message_id
-        )
+    def get_reference(cls, app_model: App, user: Optional[Union[Account, EndUser]],
+                      message_id: str):
+        if not user:
+            raise ValueError('user cannot be None')
 
-        if query !=None and query != message.query:                # update query
-            db.session.query(Message).filter(
-                Message.id == message_id,
-                Message.app_id == app_model.id,
-                Message.from_source == ('api' if isinstance(user, EndUser) else 'console'),
-                Message.from_end_user_id == (user.id if isinstance(user, EndUser) else None),
-                Message.from_account_id == (user.id if isinstance(user, Account) else None),
-            ).update({Message.query: query})
+        resources = db.session.query(DatasetRetrieverResource).filter(
+            DatasetRetrieverResource.message_id == message_id
+        ).all()
 
-            message.query = query
+        ref_docs = []
+        for resource in resources:
+            doc = db.session.query(Document).filter(
+                Document.id == resource.document_id
+            ).first()
 
-        elif answer != None and answer != message.answer:           # update answer
-            db.session.query(Message).filter(
-                Message.id == message_id,
-                Message.app_id == app_model.id,
-                Message.from_source == ('api' if isinstance(user, EndUser) else 'console'),
-                Message.from_end_user_id == (user.id if isinstance(user, EndUser) else None),
-                Message.from_account_id == (user.id if isinstance(user, Account) else None),
-            ).update({Message.answer: answer})
+            upload_id = json.loads(doc.data_source_info)["upload_file_id"]
+            upload_file = db.session.query(UploadFile).filter(
+                UploadFile.id == upload_id
+            ).first()
 
-            message.answer = answer
+            file_path = upload_file.key
+            data = storage.load(file_path)
+            ref_docs.append({"doc_name": doc.name, "doc_content": data})
 
-        db.session.commit()
+        return ref_docs
 
-        return message
+
